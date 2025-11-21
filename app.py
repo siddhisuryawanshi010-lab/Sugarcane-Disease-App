@@ -63,13 +63,16 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- BACKEND MODEL LOADING ---
+# --- BACKEND MODEL LOADING (DEBUG MODE) ---
 @st.cache_resource
 def load_model():
     try:
-        # Ensure 'sugarcane_model.h5' is in the same folder!
+        # Try loading the model
         model = tf.keras.models.load_model('sugarcane_model.h5')
         return model
-    except:
+    except Exception as e:
+        # If it fails, PRINT THE ERROR to the screen so we can see it!
+        st.error(f"⚠️ Model Loading Failed! Error: {e}")
         return None
 
 model = load_model()
@@ -112,10 +115,16 @@ elif app_mode == "Live Analysis":
             image = Image.open(uploaded_file)
             st.image(image, caption="Sample Preview", use_column_width=True)
 
-    with col2:
+   with col2:
         st.subheader("2. Analysis Results")
-        if uploaded_file and model:
-            if st.button("🔍 Run Deep Learning Scan"):
+        
+        if uploaded_file:
+            if model is None:
+                st.error("❌ The AI Model is not loaded. Check the 'sugarcane_model.h5' file.")
+            else:
+                # ... (The rest of your button code goes here)
+                if st.button("🔍 Run Deep Learning Scan"):
+                    # ... (Your existing code)
                 # Fake Loading
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -190,4 +199,5 @@ elif app_mode == "Reports":
             mime="text/csv"
         )
     else:
+
         st.warning("No data available to generate report. Please run a scan first.")
