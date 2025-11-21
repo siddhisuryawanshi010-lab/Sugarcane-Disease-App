@@ -1,25 +1,58 @@
 import streamlit as st
 import tensorflow as tf
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 import time
 import pandas as pd
 import datetime
+import os
+import gdown # Library to download from Google Drive
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="AgriScan AI", page_icon="🌿", layout="wide")
 
-# --- SESSION STATE (Start from ZERO) ---
-if 'total_scans' not in st.session_state:
-    st.session_state['total_scans'] = 0  # Starts at 0
+# ==========================================
+# 👇 PASTE YOUR GOOGLE DRIVE FILE ID HERE 👇
+# ==========================================
+file_id = '1XMMg6Ep99H5XvmCnlMa8IXOLImMDwpTy'
+# ==========================================
 
+# --- BACKEND MODEL LOADING (CLOUD VERSION) ---
+@st.cache_resource
+def load_model():
+    model_path = 'sugarcane_model.h5'
+    
+    # 1. Check if model exists, if not, download from Drive
+    if not os.path.exists(model_path):
+        try:
+            url = f'https://drive.google.com/uc?id={file_id}'
+            print(f"Downloading model from Google Drive (ID: {file_id})...")
+            gdown.download(url, model_path, quiet=False)
+            print("Download complete.")
+        except Exception as e:
+            st.error(f"Failed to download model: {e}")
+            return None
+
+    # 2. Load the model
+    try:
+        model = tf.keras.models.load_model(model_path)
+        return model
+    except Exception as e:
+        st.error(f"Model Load Error: {e}")
+        return None
+
+model = load_model()
+
+# --- SESSION STATE ---
+if 'total_scans' not in st.session_state:
+    st.session_state['total_scans'] = 0
 if 'recent_scans' not in st.session_state:
-    st.session_state['recent_scans'] = [] # Starts Empty
+    st.session_state['recent_scans'] = []
 
 # --- TREATMENT DATABASE ---
 TREATMENT_INFO = {
     "RedRot": {
-        "Traditional": "Crop rotation with rice or green manure. Remove and burn infected clumps immediately.",
+        "Traditional": "Crop rotation with rice. Remove and burn infected clumps immediately.",
         "Chemical": "Dip setts in 0.1% Carbendazim solution for 15 mins before planting.",
         "Organic": "Soil application of Trichoderma viride (Bio-fungicide) mixed with compost."
     },
@@ -45,6 +78,8 @@ TREATMENT_INFO = {
     }
 }
 
+class_names = ['Healthy', 'Mosaic', 'RedRot', 'Rust', 'Yellow']
+
 # --- CUSTOM CSS ---
 st.markdown("""
     <style>
@@ -58,25 +93,8 @@ st.markdown("""
         font-size: 18px;
     }
     .stButton>button:hover { background-color: #1b5e20; color: white; }
-    .metric-container { background-color: white; padding: 10px; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
-
-# --- BACKEND MODEL LOADING ---
-# --- BACKEND MODEL LOADING (DEBUG MODE) ---
-@st.cache_resource
-def load_model():
-    try:
-        # Try loading the model
-        model = tf.keras.models.load_model('sugarcane_model.h5')
-        return model
-    except Exception as e:
-        # If it fails, PRINT THE ERROR to the screen so we can see it!
-        st.error(f"⚠️ Model Loading Failed! Error: {e}")
-        return None
-
-model = load_model()
-class_names = ['Healthy', 'Mosaic', 'RedRot', 'Rust', 'Yellow']
 
 # --- SIDEBAR ---
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/188/188333.png", width=80)
@@ -88,19 +106,16 @@ st.sidebar.info("System Status: **Online** ✅")
 # --- PAGE 1: DASHBOARD ---
 if app_mode == "Dashboard":
     st.title("📊 Farm Health Overview")
-    
     col1, col2, col3 = st.columns(3)
-    col1.metric("Total Scans (Session)", f"{st.session_state['total_scans']}", "Live Count")
-    col2.metric("System Status", "Active", "Ready")
-    col3.metric("Model Accuracy", "92.5%", "High Precision")
+    col1.metric("Total Scans", f"{st.session_state['total_scans']}", "Live")
+    col2.metric("System", "Active", "Ready")
+    col3.metric("Accuracy", "92.5%", "High")
     
-    st.markdown("### 🕒 Recent Activity Log")
-    
-    if len(st.session_state['recent_scans']) == 0:
-        st.info("No scans performed yet. Go to 'Live Analysis' to start.")
+    if len(st.session_state['recent_scans']) > 0:
+        st.markdown("### 🕒 Activity Log")
+        st.dataframe(pd.DataFrame(st.session_state['recent_scans']), use_container_width=True)
     else:
-        df_log = pd.DataFrame(st.session_state['recent_scans'])
-        st.dataframe(df_log, use_container_width=True)
+        st.info("System Ready. Go to 'Live Analysis' to begin.")
 
 # --- PAGE 2: LIVE ANALYSIS ---
 elif app_mode == "Live Analysis":
@@ -118,26 +133,18 @@ elif app_mode == "Live Analysis":
 
     with col2:
         st.subheader("2. Analysis Results")
-        
         if uploaded_file:
-            # DEBUG CHECK: Is the model loaded?
             if model is None:
-                st.error("❌ The AI Model failed to load. Please verify 'sugarcane_model.h5' is in your GitHub repository.")
+                st.error("❌ Model failed to load. Check Google Drive ID.")
             else:
                 if st.button("🔍 Run Deep Learning Scan"):
-                    # Fake Loading
                     progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    status_text.text("Preprocessing...")
+                    status = st.empty()
+                    status.text("Processing...")
                     time.sleep(0.5)
                     progress_bar.progress(50)
                     
-                    status_text.text("Analyzing Leaf Patterns...")
-                    time.sleep(0.5)
-                    progress_bar.progress(100)
-                    status_text.empty()
-
-                    # --- THE FIX: Center Crop ---
+                    # --- CENTER CROP FIX ---
                     img_cropped = ImageOps.fit(image, (224, 224), Image.Resampling.LANCZOS)
                     img_array = np.array(img_cropped)
                     img_array = np.expand_dims(img_array, axis=0) / 255.0
@@ -146,56 +153,44 @@ elif app_mode == "Live Analysis":
                     predicted_class = class_names[np.argmax(predictions)]
                     confidence = np.max(predictions)
                     
-                    # Update Session State
+                    progress_bar.progress(100)
+                    status.empty()
+                    
+                    # Log
                     st.session_state['total_scans'] += 1
-                    today_date = datetime.date.today().strftime("%Y-%m-%d")
-                    new_log = {'Date': today_date, 'Location': 'Live Upload', 'Status': predicted_class}
-                    st.session_state['recent_scans'].insert(0, new_log)
+                    today = datetime.date.today().strftime("%Y-%m-%d")
+                    st.session_state['recent_scans'].insert(0, {'Date': today, 'Location': 'Live', 'Status': predicted_class})
 
-                    # Display Result
+                    # Result
                     if predicted_class == 'Healthy':
-                        st.success(f"✅ RESULT: **{predicted_class}**")
+                        st.success(f"✅ RESULT: {predicted_class}")
                         st.image(img_cropped, caption="Analysis Focus Area", width=200)
                     else:
-                        st.error(f"⚠️ RESULT: **{predicted_class}**")
+                        st.error(f"⚠️ RESULT: {predicted_class}")
                     
-                    st.write(f"**Confidence:** {confidence*100:.2f}%")
-                    st.progress(int(confidence * 100))
+                    st.write(f"**AI Confidence:** {confidence*100:.2f}%")
                     
                     st.markdown("---")
-                    st.subheader("💊 Recommended Treatments")
-                    
                     if predicted_class in TREATMENT_INFO:
                         info = TREATMENT_INFO[predicted_class]
                         t1, t2, t3 = st.columns(3)
                         with t1:
-                            st.info("**🛠️ Traditional**")
+                            st.info("Traditional")
                             st.write(info["Traditional"])
                         with t2:
-                            st.warning("**🧪 Chemical**")
+                            st.warning("Chemical")
                             st.write(info["Chemical"])
                         with t3:
-                            st.success("**🌿 Organic**")
+                            st.success("Organic")
                             st.write(info["Organic"])
 
 # --- PAGE 3: REPORTS ---
 elif app_mode == "Reports":
     st.title("📑 Session Reports")
-    
     if len(st.session_state['recent_scans']) > 0:
-        df_report = pd.DataFrame(st.session_state['recent_scans'])
-        st.table(df_report)
-        
-        csv = df_report.to_csv(index=False).encode('utf-8')
-        
-        # Fixed the syntax error here by using arguments clearly
-        st.download_button(
-            label="📥 Download CSV Report",
-            data=csv,
-            file_name="scan_report.csv",
-            mime="text/csv"
-        )
+        df = pd.DataFrame(st.session_state['recent_scans'])
+        st.table(df)
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download CSV", csv, "report.csv", "text/csv")
     else:
-
-        st.warning("No data available to generate report. Please run a scan first.")
-
+        st.warning("No data available.")
