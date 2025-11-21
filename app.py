@@ -111,75 +111,72 @@ elif app_mode == "Live Analysis":
     with col1:
         st.subheader("1. Upload Sample")
         uploaded_file = st.file_uploader("Drop Image Here", type=["jpg", "png", "jpeg"])
+        
         if uploaded_file:
             image = Image.open(uploaded_file)
-            st.image(image, caption="Sample Preview", use_column_width=True)
+            st.image(image, caption="Sample Preview", use_container_width=True)
 
-   with col2:
+    with col2:
         st.subheader("2. Analysis Results")
         
         if uploaded_file:
+            # DEBUG CHECK: Is the model loaded?
             if model is None:
-                st.error("❌ The AI Model is not loaded. Check the 'sugarcane_model.h5' file.")
+                st.error("❌ The AI Model failed to load. Please verify 'sugarcane_model.h5' is in your GitHub repository.")
             else:
-                # ... (The rest of your button code goes here)
                 if st.button("🔍 Run Deep Learning Scan"):
-                    # ... (Your existing code)
-                # Fake Loading
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                status_text.text("Preprocessing...")
-                time.sleep(0.5)
-                progress_bar.progress(50)
-                status_text.text("Analyzing Leaf Patterns...")
-                time.sleep(0.5)
-                progress_bar.progress(100)
-                status_text.empty()
+                    # Fake Loading
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    status_text.text("Preprocessing...")
+                    time.sleep(0.5)
+                    progress_bar.progress(50)
+                    
+                    status_text.text("Analyzing Leaf Patterns...")
+                    time.sleep(0.5)
+                    progress_bar.progress(100)
+                    status_text.empty()
 
-                # Real Prediction
-                img = image.resize((224, 224))
-                img_array = np.array(img)
-                img_array = np.expand_dims(img_array, axis=0) / 255.0
-                
-                predictions = model.predict(img_array)
-                predicted_class = class_names[np.argmax(predictions)]
-                confidence = np.max(predictions)
-                
-                # Update Session State
-                st.session_state['total_scans'] += 1
-                today_date = datetime.date.today().strftime("%Y-%m-%d")
-                new_log = {'Date': today_date, 'Location': 'Live Upload', 'Status': predicted_class}
-                st.session_state['recent_scans'].insert(0, new_log)
+                    # --- THE FIX: Center Crop ---
+                    img_cropped = ImageOps.fit(image, (224, 224), Image.Resampling.LANCZOS)
+                    img_array = np.array(img_cropped)
+                    img_array = np.expand_dims(img_array, axis=0) / 255.0
+                    
+                    predictions = model.predict(img_array)
+                    predicted_class = class_names[np.argmax(predictions)]
+                    confidence = np.max(predictions)
+                    
+                    # Update Session State
+                    st.session_state['total_scans'] += 1
+                    today_date = datetime.date.today().strftime("%Y-%m-%d")
+                    new_log = {'Date': today_date, 'Location': 'Live Upload', 'Status': predicted_class}
+                    st.session_state['recent_scans'].insert(0, new_log)
 
-                # Display Result
-                if predicted_class == 'Healthy':
-                    st.success(f"✅ RESULT: **{predicted_class}**")
-                else:
-                    st.error(f"⚠️ RESULT: **{predicted_class}**")
-                
-                st.write(f"**Confidence:** {confidence*100:.2f}%")
-                st.progress(int(confidence * 100))
-                
-                st.markdown("---")
-                st.subheader("💊 Recommended Treatments")
-                
-                # THE 3-WAY SOLUTION DISPLAY
-                if predicted_class in TREATMENT_INFO:
-                    info = TREATMENT_INFO[predicted_class]
+                    # Display Result
+                    if predicted_class == 'Healthy':
+                        st.success(f"✅ RESULT: **{predicted_class}**")
+                        st.image(img_cropped, caption="Analysis Focus Area", width=200)
+                    else:
+                        st.error(f"⚠️ RESULT: **{predicted_class}**")
                     
-                    t1, t2, t3 = st.columns(3)
+                    st.write(f"**Confidence:** {confidence*100:.2f}%")
+                    st.progress(int(confidence * 100))
                     
-                    with t1:
-                        st.info("**🛠️ Traditional**")
-                        st.write(info["Traditional"])
+                    st.markdown("---")
+                    st.subheader("💊 Recommended Treatments")
                     
-                    with t2:
-                        st.warning("**🧪 Chemical**")
-                        st.write(info["Chemical"])
-                        
-                    with t3:
-                        st.success("**🌿 Organic**")
-                        st.write(info["Organic"])
+                    if predicted_class in TREATMENT_INFO:
+                        info = TREATMENT_INFO[predicted_class]
+                        t1, t2, t3 = st.columns(3)
+                        with t1:
+                            st.info("**🛠️ Traditional**")
+                            st.write(info["Traditional"])
+                        with t2:
+                            st.warning("**🧪 Chemical**")
+                            st.write(info["Chemical"])
+                        with t3:
+                            st.success("**🌿 Organic**")
+                            st.write(info["Organic"])
 
 # --- PAGE 3: REPORTS ---
 elif app_mode == "Reports":
@@ -201,3 +198,4 @@ elif app_mode == "Reports":
     else:
 
         st.warning("No data available to generate report. Please run a scan first.")
+
